@@ -1,4 +1,4 @@
-from http import HTTPStatus
+from http.client import FOUND, NOT_FOUND, OK
 from random import choice
 
 from django.urls import reverse
@@ -17,72 +17,77 @@ def test_unauthorized_user_can_not_create_comment(
     news,
     post_comment
 ):
+    count_before_creating = Comment.objects.count()
     url = reverse('news:detail', args=(news.id,))
     response = client.post(url, data=post_comment)
-    response.status_code == HTTPStatus.FOUND
-    assert Comment.objects.count() == 0
+    response.status_code == FOUND
+    assert Comment.objects.count() == count_before_creating
 
 
 def test_authorized_user_can_create_comment(
-    auth_user,
-    auth_user_client,
+    author,
+    author_client,
     news,
     post_comment
 ):
+    count_before_creating = Comment.objects.count()
     url = reverse('news:detail', args=(news.id,))
-    response = auth_user_client.post(url, data=post_comment)
-    assert response.status_code == HTTPStatus.FOUND
-    comments_count = Comment.objects.count()
-    assert comments_count == 1
+    response = author_client.post(url, data=post_comment)
+    assert response.status_code == FOUND
+    count_after_creating = Comment.objects.count()
+    assert count_after_creating == 1 + count_before_creating
     comment = Comment.objects.get()
     assert comment.text == post_comment['text']
     assert comment.news == news
-    assert comment.author == auth_user
+    assert comment.author == author
 
 
-def test_user_can_not_use_bad_words(auth_user_client, news):
+def test_user_can_not_use_bad_words(author_client, news):
+    count_before_creating = Comment.objects.count()
     url = reverse('news:detail', args=(news.id,))
     comment_with_bad_words = {
         'text': f'Комментарий с запрещенным словом {choice(BAD_WORDS)}!'
     }
-    response = auth_user_client.post(url, data=comment_with_bad_words)
-    assert response.status_code == HTTPStatus.OK
+    response = author_client.post(url, data=comment_with_bad_words)
+    assert response.status_code == OK
     assertFormError(
         response,
         form='form',
         field='text',
         errors=WARNING
     )
-    comments_count = Comment.objects.count()
-    assert comments_count == 0
+    assert Comment.objects.count() == count_before_creating
 
 
 def test_author_can_delete_comment(author_client, news, comment):
+    count_before_creating = Comment.objects.count()
     detail_url = reverse('news:detail', args=(news.id,))
     delete_comment_url = reverse('news:delete', args=(comment.id,))
     url_to_comment = detail_url + '#comments'
     response = author_client.delete(delete_comment_url)
-    assert response.status_code == HTTPStatus.FOUND
+    assert response.status_code == FOUND
     assertRedirects(response, url_to_comment)
-    comments_count = Comment.objects.count()
-    assert comments_count == 0
+    count_after_creating = Comment.objects.count()
+    assert count_after_creating == count_before_creating - 1
 
 
-def test_user_can_not_delete_comment_of_user(auth_user_client, comment):
+def test_user_can_not_delete_comment_of_user(admin_client, comment):
+    count_before_creating = Comment.objects.count()
     delete_comment_url = reverse('news:delete', args=(comment.id,))
-    response = auth_user_client.delete(delete_comment_url)
-    assert response.status_code == HTTPStatus.NOT_FOUND
-    comments_count = Comment.objects.count()
-    assert comments_count == 1
+    response = admin_client.delete(delete_comment_url)
+    assert response.status_code == NOT_FOUND
+    count_after_creating = Comment.objects.count()
+    assert count_after_creating == count_before_creating
 
 
 @pytest.mark.django_db
 def test_unauthorized_user_can_not_delete_comment(client, comment):
+    count_before_creating = Comment.objects.count()
     delete_comment_url = reverse('news:delete', args=(comment.id,))
     response = client.delete(delete_comment_url)
-    assert response.status_code == HTTPStatus.FOUND
-    comments_count = Comment.objects.count()
-    assert comments_count == 1
+    assert response.status_code == FOUND
+    count_after_creating = Comment.objects.count()
+    assert count_after_creating == count_before_creating
 
 
 def test_author_can_edit_comment(
@@ -91,34 +96,44 @@ def test_author_can_edit_comment(
     news,
     post_comment
 ):
+    count_before_creating = Comment.objects.count()
     detail_url = reverse('news:detail', args=(news.id,))
     edit_comment_url = reverse('news:edit', args=(comment.id,))
     url_to_comments = detail_url + '#comments'
     response = author_client.post(edit_comment_url, data=post_comment)
-    assert response.status_code == HTTPStatus.FOUND
+    assert response.status_code == FOUND
     assertRedirects(response, url_to_comments)
     comment.refresh_from_db()
     assert comment.text == post_comment['text']
+    count_after_creating = Comment.objects.count()
+    assert count_after_creating == count_before_creating
 
 
 def test_user_can_not_edit_comment_of_another_user(
-    auth_user_client,
+    admin_client,
     comment,
     post_comment
 ):
+    count_before_creating = Comment.objects.count()
     edit_comment_url = reverse('news:edit', args=(comment.id,))
-    current_comment_text = comment.text
-    response = auth_user_client.post(edit_comment_url, data=post_comment)
-    assert response.status_code == HTTPStatus.NOT_FOUND
-    comment.refresh_from_db()
-    assert comment.text == current_comment_text
+    response = admin_client.post(edit_comment_url, data=post_comment)
+    assert response.status_code == NOT_FOUND
+    updated_comment = Comment.objects.get(id=comment.id)
+    assert updated_comment.text == comment.text
+    assert updated_comment.news == comment.news
+    assert updated_comment.author == comment.author
+    count_after_creating = Comment.objects.count()
+    assert count_after_creating == count_before_creating
 
 
 @pytest.mark.django_db
 def test_unauthorized_user_can_not_edit_comment(client, comment, post_comment):
+    count_before_creating = Comment.objects.count()
     edit_comment_url = reverse('news:edit', args=(comment.id,))
     current_comment_text = comment.text
     response = client.post(edit_comment_url, data=post_comment)
-    assert response.status_code == HTTPStatus.FOUND
+    assert response.status_code == FOUND
     comment.refresh_from_db()
     assert comment.text == current_comment_text
+    count_after_creating = Comment.objects.count()
+    assert count_after_creating == count_before_creating

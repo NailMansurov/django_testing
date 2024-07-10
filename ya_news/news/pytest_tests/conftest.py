@@ -1,13 +1,13 @@
 from datetime import datetime, timedelta
 
 from django.test.client import Client
+from django.urls import reverse
 from django.utils import timezone
 
 import pytest
 
+from .common import Routes, NEWS_COUNT_ON_HOME_PAGE
 from news.models import Comment, News
-
-NEWS_COUNT_ON_HOME_PAGE = 10
 
 
 @pytest.fixture
@@ -16,7 +16,7 @@ def author(django_user_model):
 
 
 @pytest.fixture
-def auth_user(django_user_model):
+def reader(django_user_model):
     return django_user_model.objects.create(username='Читатель',)
 
 
@@ -28,9 +28,9 @@ def author_client(author):
 
 
 @pytest.fixture
-def auth_user_client(auth_user):
+def reader_client(reader):
     client = Client()
-    client.force_login(auth_user)
+    client.force_login(reader)
     return client
 
 
@@ -41,11 +41,6 @@ def news():
         text='Текст',
     )
     return news
-
-
-@pytest.fixture
-def news_id(news):
-    return (news.pk,)
 
 
 @pytest.fixture
@@ -79,11 +74,6 @@ def post_comment():
 
 
 @pytest.fixture
-def comment_id(comment):
-    return (comment.pk,)
-
-
-@pytest.fixture
 def list_of_comments(news, author):
     now = timezone.now()
     comments = []
@@ -97,3 +87,38 @@ def list_of_comments(news, author):
         comment.save()
         comments.append(comment)
     return comments
+
+
+@pytest.fixture
+def home_url():
+    return Routes.URL_HOME
+
+
+@pytest.fixture
+def login_url():
+    return Routes.LOGIN_URL
+
+
+@pytest.fixture
+def logout_url():
+    return Routes.URL_LOGOUT
+
+
+@pytest.fixture
+def signup_url():
+    return Routes.URL_SIGNUP
+
+
+@pytest.fixture
+def detail_url(news):
+    return reverse('news:detail', args=(news.pk,))
+
+
+@pytest.fixture
+def edit_url(comment):
+    return reverse('news:edit', args=(comment.pk,))
+
+
+@pytest.fixture
+def delete_url(comment):
+    return reverse('news:delete', args=(comment.pk,))

@@ -1,60 +1,49 @@
-from django.test import Client, TestCase
-from django.urls import reverse
+from http.client import NOT_FOUND
 
-from http import HTTPStatus
 from pytils.translit import slugify
 
-from .constants import User
-from notes.models import Note
+from .common import FixturesForTests, Routes
 from notes.forms import WARNING
+from notes.models import Note
+
+TITLE = 'Заголовок'
+TEXT = 'Текст'
+SLUG = 'note_slug'
 
 
-class TestCreateNote(TestCase):
-    TITLE = 'Заголовок'
-    TEXT = 'Текст'
-    SLUG = 'note_slug'
-
-    @classmethod
-    def setUpTestData(cls):
-        cls.user = User.objects.create(username='Пользователь')
-        cls.auth_client = Client()
-        cls.auth_client.force_login(cls.user)
-        cls.success_url = reverse('notes:success')
-        cls.add_url = reverse('notes:add')
-        cls.form_data = {'title': cls.TITLE,
-                         'text': cls.TEXT,
-                         'slug': cls.SLUG}
+class TestCreateNote(FixturesForTests):
 
     def test_user_can_create_note(self):
+        Note.objects.all().delete()
         count_before_creating = Note.objects.count()
-        response = self.auth_client.post(self.add_url, data=self.form_data)
-        self.assertRedirects(response, self.success_url)
+        response = self.author_client.post(Routes.URL_ADD, data=self.form_data)
+        self.assertRedirects(response, Routes.URL_SUCCESS)
         count_after_creating = Note.objects.count()
         count_difference = count_after_creating - count_before_creating
         self.assertEqual(count_difference, 1)
         new_note = Note.objects.get()
-        self.assertEqual(new_note.title, self.TITLE)
-        self.assertEqual(new_note.text, self.TEXT)
-        self.assertEqual(new_note.slug, self.SLUG)
-        self.assertEqual(new_note.author, self.user)
+        self.assertEqual(new_note.title, TITLE)
+        self.assertEqual(new_note.text, TEXT)
+        self.assertEqual(new_note.slug, SLUG)
+        self.assertEqual(new_note.author, self.author)
 
     def test_anon_user_cant_create_note(self):
         count_before_creating = Note.objects.count()
-        response = self.client.post(self.add_url, data=self.form_data)
+        response = self.client.post(Routes.URL_ADD, data=self.form_data)
         count_after_creating = Note.objects.count()
         count_difference = count_after_creating - count_before_creating
         self.assertEqual(count_difference, 0)
-        login_url = reverse('users:login')
-        expected_url = f'{login_url}?next={self.add_url}'
+        expected_url = f'{Routes.URL_LOGIN}?next={Routes.URL_ADD}'
         self.assertRedirects(response, expected_url)
 
     def test_empty_slug(self):
+        Note.objects.all().delete()
         count_before_creating = Note.objects.count()
         self.form_data.pop('slug')
-        response = self.auth_client.post(
-            self.add_url, data=self.form_data
+        response = self.author_client.post(
+            Routes.URL_ADD, data=self.form_data
         )
-        self.assertRedirects(response, reverse('notes:success'))
+        self.assertRedirects(response, Routes.URL_SUCCESS)
         count_after_creating = Note.objects.count()
         count_difference = count_after_creating - count_before_creating
         self.assertEqual(count_difference, 1)
@@ -63,79 +52,58 @@ class TestCreateNote(TestCase):
         self.assertEqual(new_note.slug, expected_slug)
 
 
-class TestEditDeleteNote(TestCase):
-    TITLE = 'Заголовов'
-    TEXT = 'Текст'
-    SLUG = 'note_slug'
+class TestEditDeleteNote(FixturesForTests):
     NEW_TITLE = 'Новый заголовок'
     NEW_TEXT = 'Новый текст'
-    NEW_SLUG = 'new_not_slug'
-
-    @classmethod
-    def setUpTestData(cls):
-        cls.user = User.objects.create(username='Пользователь')
-        cls.other_user = User.objects.create(username='Другой пользователь')
-        cls.auth_client = Client()
-        cls.auth_client.force_login(cls.user)
-        cls.note = Note.objects.create(
-            title=cls.TITLE,
-            text=cls.TEXT,
-            slug=cls.SLUG,
-            author=cls.user
-        )
-        cls.success_url = reverse('notes:success')
-        cls.edit_url = reverse('notes:edit', args=(cls.note.slug,))
-        cls.delete_url = reverse('notes:delete', args=(cls.note.slug,))
-        cls.form_data = {
-            'title': cls.NEW_TITLE,
-            'text': cls.NEW_TEXT,
-            'slug': cls.NEW_SLUG
-        }
+    NEW_SLUG = 'New_note_slug'
 
     def test_author_can_edit_note(self):
-        response = self.auth_client.post(self.edit_url, data=self.form_data)
-        self.assertRedirects(response, self.success_url)
+        response = self.author_client.post(
+            Routes.URL_EDIT, data=self.form_data_edited
+        )
+        self.assertRedirects(response, Routes.URL_SUCCESS)
         self.note.refresh_from_db()
         self.assertEqual(self.note.title, self.NEW_TITLE)
         self.assertEqual(self.note.text, self.NEW_TEXT)
         self.assertEqual(self.note.slug, self.NEW_SLUG)
 
     def test_other_user_cannot_edit_note(self):
-        self.client.force_login(self.other_user)
-        response = self.client.post(self.edit_url, data=self.form_data)
-        self.assertEqual(response.status_code, HTTPStatus.NOT_FOUND)
+        response = self.reader_client.post(
+            Routes.URL_EDIT, data=self.form_data_edited
+        )
+        self.assertEqual(response.status_code, NOT_FOUND)
         self.note.refresh_from_db()
-        self.assertEqual(self.note.title, self.TITLE)
-        self.assertEqual(self.note.text, self.TEXT)
-        self.assertEqual(self.note.slug, self.SLUG)
+        self.assertEqual(self.note.title, TITLE)
+        self.assertEqual(self.note.text, TEXT)
+        self.assertEqual(self.note.slug, SLUG)
 
     def test_author_can_delete_note(self):
         count_before_deletion = Note.objects.count()
-        response = self.auth_client.delete(self.delete_url)
-        self.assertRedirects(response, self.success_url)
+        response = self.author_client.delete(Routes.URL_DELETE)
+        self.assertRedirects(response, Routes.URL_SUCCESS)
         count_after_deletion = Note.objects.count()
         count_difference = count_before_deletion - count_after_deletion
         self.assertEqual(count_difference, 1)
 
     def test_other_user_cannot_delete_note(self):
-        self.client.force_login(self.other_user)
         count_before_deletion = Note.objects.count()
-        response = self.client.delete(self.delete_url)
-        self.assertEqual(response.status_code, HTTPStatus.NOT_FOUND)
+        response = self.reader_client.delete(Routes.URL_DELETE)
+        self.assertEqual(response.status_code, NOT_FOUND)
         count_after_deletion = Note.objects.count()
         count_difference = count_before_deletion - count_after_deletion
         self.assertEqual(count_difference, 0)
 
     def test_slug_cannot_be_repeat(self):
-        self.form_data['slug'] = self.note.slug
-        add_url = reverse('notes:add')
+        self.form_data_edited['slug'] = self.note.slug
         count_before_creating = Note.objects.count()
-        response = self.auth_client.post(add_url, data=self.form_data)
+        response = self.author_client.post(
+            Routes.URL_ADD, data=self.form_data_edited
+        )
         self.assertFormError(
             response,
             form='form',
             field='slug',
-            errors=self.SLUG + WARNING
+            errors=SLUG + WARNING
         )
         count_after_creating = Note.objects.count()
         count_difference = count_after_creating - count_before_creating

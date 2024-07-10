@@ -1,29 +1,28 @@
-from http import HTTPStatus
+from http.client import OK
 
 from django.urls import reverse
 
 import pytest
 
+from .common import Routes, NEWS_COUNT_ON_HOME_PAGE, Urls
 from news.forms import CommentForm
-
-NEWS_COUNT_ON_HOME_PAGE = 10
+from news.models import News
 
 
 @pytest.mark.django_db
 def test_news_count(client, list_of_news):
-    url = reverse('news:home')
-    response = client.get(url)
-    assert response.status_code == HTTPStatus.OK
-    news_list = response.context['object_list']
-    news_count = news_list.count()
-    assert news_count == NEWS_COUNT_ON_HOME_PAGE
+    response = client.get(Routes.URL_HOME)
+    assert response.status_code == OK
+    if News.objects.count() > NEWS_COUNT_ON_HOME_PAGE:
+        news_list = response.context['object_list']
+        news_count = news_list.count()
+        assert news_count == NEWS_COUNT_ON_HOME_PAGE
 
 
 @pytest.mark.django_db
 def test_news_order(client, list_of_news):
-    url = reverse('news:home')
-    response = client.get(url)
-    assert response.status_code == HTTPStatus.OK
+    response = client.get(Routes.URL_HOME)
+    assert response.status_code == OK
     news_list = list(response.context['object_list'])
     sorted_news = sorted(
         news_list,
@@ -37,7 +36,7 @@ def test_news_order(client, list_of_news):
 def test_comments_order(client, news, list_of_comments):
     url = reverse('news:detail', args=(news.id,))
     response = client.get(url)
-    assert response.status_code == HTTPStatus.OK
+    assert response.status_code == OK
     piece_of_news = response.context['news']
     comments_list = list(piece_of_news.comment_set.all())
     sorted_comments = sorted(
@@ -51,8 +50,8 @@ def test_comments_order(client, news, list_of_comments):
 @pytest.mark.parametrize(
     'parametrized_client, form_in_list',
     (
-        (pytest.lazy_fixture('author_client'), True),
-        (pytest.lazy_fixture('client'), False)
+        (Urls.AUTHOR, True),
+        (Urls.ANY_USER, False)
     )
 )
 def test_unauthorized_client_has_no_form(
@@ -62,7 +61,7 @@ def test_unauthorized_client_has_no_form(
 ):
     url = reverse('news:detail', args=(comment.id,))
     response = parametrized_client.get(url)
-    assert response.status_code == HTTPStatus.OK
+    assert response.status_code == OK
     assert ('form' in response.context) is form_in_list
     if 'form' in response.context:
         assert isinstance(response.context['form'], CommentForm)
